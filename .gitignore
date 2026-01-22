@@ -1,0 +1,10 @@
+# Node
+node_modules/
+
+# Credenciales y tokens (NO subir a GitHub)
+credentials.json
+token.json
+serviceAccountKey.json
+
+# Logs
+*.log
