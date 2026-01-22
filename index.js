@@ -30,23 +30,29 @@ const SCOPES = [
 ];
 
 /* ================================
-   OAUTH CLIENT (ENV)
+   OAUTH CLIENT
 ================================ */
 function getOAuthClient() {
-  const { 
-    GMAIL_CLIENT_ID, 
-    GMAIL_CLIENT_SECRET, 
-    GMAIL_REDIRECT_URI 
-  } = process.env;
-
-  if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REDIRECT_URI) {
-    throw new Error("Faltan variables de entorno de Gmail OAuth");
-  }
-
-  return new google.auth.OAuth2(
+  const {
     GMAIL_CLIENT_ID,
     GMAIL_CLIENT_SECRET,
     GMAIL_REDIRECT_URI
+  } = process.env;
+
+  if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REDIRECT_URI) {
+    console.error("❌ VARIABLES DE ENTORNO FALTANTES");
+    console.error({
+      GMAIL_CLIENT_ID,
+      GMAIL_CLIENT_SECRET: GMAIL_CLIENT_SECRET ? "OK" : "MISSING",
+      GMAIL_REDIRECT_URI
+    });
+    throw new Error("Faltan variables OAuth");
+  }
+
+  return new google.auth.OAuth2(
+    GMAIL_CLIENT_ID.trim(),
+    GMAIL_CLIENT_SECRET.trim(),
+    GMAIL_REDIRECT_URI.trim()
   );
 }
 
@@ -58,7 +64,7 @@ app.get("/", (req, res) => {
 });
 
 /* ================================
-   AUTORIZAR GMAIL
+   INICIAR AUTORIZACIÓN GMAIL
 ================================ */
 app.get("/auth/gmail", (req, res) => {
   try {
@@ -67,12 +73,17 @@ app.get("/auth/gmail", (req, res) => {
     const authUrl = oAuth2Client.generateAuthUrl({
       access_type: "offline",
       scope: SCOPES,
-      prompt: "consent"
+      prompt: "consent",
+      include_granted_scopes: true
     });
 
+    console.log("🔗 URL OAuth generada:");
+    console.log(authUrl);
+
     res.redirect(authUrl);
+
   } catch (error) {
-    console.error(error.message);
+    console.error("❌ Error generando OAuth URL:", error.message);
     res.status(500).send("Error iniciando OAuth Gmail");
   }
 });
@@ -83,17 +94,28 @@ app.get("/auth/gmail", (req, res) => {
 app.get("/oauth2callback", async (req, res) => {
   try {
     const code = req.query.code;
+
+    if (!code) {
+      return res.status(400).send("❌ No llegó el código de Google");
+    }
+
     const oAuth2Client = getOAuthClient();
 
     const { tokens } = await oAuth2Client.getToken(code);
     oAuth2Client.setCredentials(tokens);
 
     console.log("✅ Gmail autorizado correctamente");
+    console.log(tokens);
+
     await leerFacturas(oAuth2Client);
 
-    res.send("✅ Gmail autorizado y facturas procesadas. Puedes cerrar esta ventana.");
+    res.send(`
+      <h2>✅ Gmail autorizado correctamente</h2>
+      <p>Puedes cerrar esta ventana.</p>
+    `);
+
   } catch (error) {
-    console.error("❌ Error OAuth:", error);
+    console.error("❌ ERROR EN CALLBACK:", error.response?.data || error.message);
     res.status(500).send("Error autorizando Gmail");
   }
 });
