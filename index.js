@@ -8,12 +8,12 @@ const { leerFacturas } = require("./gmailReader");
 const app = express();
 
 /* ================================
-   CORS (DEBE IR ARRIBA)
+   CORS
 ================================ */
 app.use(cors());
 
 /* ================================
-   SERVIR CARPETA FACTURAS
+   SERVIR FACTURAS
 ================================ */
 app.use(
   "/facturas",
@@ -30,37 +30,51 @@ const SCOPES = [
 ];
 
 /* ================================
-   OAUTH CLIENT (ENV VARIABLES)
+   OAUTH CLIENT (ENV)
 ================================ */
 function getOAuthClient() {
-  const client_id = process.env.GMAIL_CLIENT_ID;
-  const client_secret = process.env.GMAIL_CLIENT_SECRET;
-  const redirect_uri = process.env.GMAIL_REDIRECT_URI;
+  const { 
+    GMAIL_CLIENT_ID, 
+    GMAIL_CLIENT_SECRET, 
+    GMAIL_REDIRECT_URI 
+  } = process.env;
 
-  if (!client_id || !client_secret || !redirect_uri) {
-    throw new Error("❌ Faltan variables de entorno de Gmail OAuth");
+  if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REDIRECT_URI) {
+    throw new Error("Faltan variables de entorno de Gmail OAuth");
   }
 
   return new google.auth.OAuth2(
-    client_id,
-    client_secret,
-    redirect_uri
+    GMAIL_CLIENT_ID,
+    GMAIL_CLIENT_SECRET,
+    GMAIL_REDIRECT_URI
   );
 }
 
 /* ================================
-   AUTORIZAR GMAIL
+   HEALTH CHECK
 ================================ */
 app.get("/", (req, res) => {
-  const oAuth2Client = getOAuthClient();
+  res.send("✅ CRIGA Backend activo");
+});
 
-  const authUrl = oAuth2Client.generateAuthUrl({
-    access_type: "offline",
-    scope: SCOPES,
-    prompt: "consent"
-  });
+/* ================================
+   AUTORIZAR GMAIL
+================================ */
+app.get("/auth/gmail", (req, res) => {
+  try {
+    const oAuth2Client = getOAuthClient();
 
-  res.redirect(authUrl);
+    const authUrl = oAuth2Client.generateAuthUrl({
+      access_type: "offline",
+      scope: SCOPES,
+      prompt: "consent"
+    });
+
+    res.redirect(authUrl);
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).send("Error iniciando OAuth Gmail");
+  }
 });
 
 /* ================================
@@ -74,13 +88,12 @@ app.get("/oauth2callback", async (req, res) => {
     const { tokens } = await oAuth2Client.getToken(code);
     oAuth2Client.setCredentials(tokens);
 
-    res.send("✅ Gmail autorizado correctamente. Ya puedes cerrar esta ventana.");
-    console.log("✅ Gmail autorizado, leyendo facturas...");
-
+    console.log("✅ Gmail autorizado correctamente");
     await leerFacturas(oAuth2Client);
 
+    res.send("✅ Gmail autorizado y facturas procesadas. Puedes cerrar esta ventana.");
   } catch (error) {
-    console.error("❌ Error OAuth:", error.message);
+    console.error("❌ Error OAuth:", error);
     res.status(500).send("Error autorizando Gmail");
   }
 });
@@ -102,7 +115,6 @@ app.get("/api/facturas", (req, res) => {
     .map(xml => {
       const base = path.basename(xml, ".xml");
       const dir = path.dirname(xml);
-
       const pdfPath = path.join(FACTURAS_DIR, dir, `${base}.pdf`);
 
       return {
@@ -121,5 +133,5 @@ app.get("/api/facturas", (req, res) => {
    SERVER
 ================================ */
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor iniciado en puerto ${PORT}`);
+  console.log(`🚀 CRIGA Backend activo en puerto ${PORT}`);
 });
