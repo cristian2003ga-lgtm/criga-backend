@@ -1,48 +1,56 @@
 const fs = require("fs");
 const path = require("path");
 const express = require("express");
+const cors = require("cors");
 const { google } = require("googleapis");
 const { leerFacturas } = require("./gmailReader");
 
 const app = express();
 
-// ================================
-// SERVIR CARPETA FACTURAS
-// ================================
+/* ================================
+   CORS (DEBE IR ARRIBA)
+================================ */
+app.use(cors());
+
+/* ================================
+   SERVIR CARPETA FACTURAS
+================================ */
 app.use(
   "/facturas",
   express.static(path.join(__dirname, "facturas"))
 );
 
-
-// ================================
-// CONFIG
-// ================================
-const PORT = 3000;
-const CREDENTIALS_PATH = path.join(__dirname, "credentials.json");
-const TOKEN_PATH = path.join(__dirname, "token.json");
+/* ================================
+   CONFIG
+================================ */
+const PORT = process.env.PORT || 3000;
 
 const SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly"
 ];
 
-// ================================
-// OAUTH CLIENT
-// ================================
+/* ================================
+   OAUTH CLIENT (ENV VARIABLES)
+================================ */
 function getOAuthClient() {
-  const credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH));
-  const { client_id, client_secret, redirect_uris } = credentials.web;
+  const client_id = process.env.GMAIL_CLIENT_ID;
+  const client_secret = process.env.GMAIL_CLIENT_SECRET;
+  const redirect_uri = process.env.GMAIL_REDIRECT_URI;
+
+  if (!client_id || !client_secret || !redirect_uri) {
+    throw new Error("❌ Faltan variables de entorno de Gmail OAuth");
+  }
 
   return new google.auth.OAuth2(
     client_id,
     client_secret,
-    redirect_uris[0]
+    redirect_uri
   );
 }
 
-// ================================
-// AUTORIZAR
-// ================================
+/* ================================
+   AUTORIZAR GMAIL
+================================ */
 app.get("/", (req, res) => {
   const oAuth2Client = getOAuthClient();
 
@@ -55,29 +63,31 @@ app.get("/", (req, res) => {
   res.redirect(authUrl);
 });
 
-// ================================
-// CALLBACK
-// ================================
+/* ================================
+   CALLBACK GMAIL
+================================ */
 app.get("/oauth2callback", async (req, res) => {
-  const code = req.query.code;
-  const oAuth2Client = getOAuthClient();
+  try {
+    const code = req.query.code;
+    const oAuth2Client = getOAuthClient();
 
-  const { tokens } = await oAuth2Client.getToken(code);
-  oAuth2Client.setCredentials(tokens);
+    const { tokens } = await oAuth2Client.getToken(code);
+    oAuth2Client.setCredentials(tokens);
 
-  fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2));
+    res.send("✅ Gmail autorizado correctamente. Ya puedes cerrar esta ventana.");
+    console.log("✅ Gmail autorizado, leyendo facturas...");
 
-  res.send("✅ Gmail autorizado correctamente. Puedes cerrar esta ventana.");
-  console.log("✅ Token guardado en token.json");
+    await leerFacturas(oAuth2Client);
 
-  await leerFacturas();
+  } catch (error) {
+    console.error("❌ Error OAuth:", error.message);
+    res.status(500).send("Error autorizando Gmail");
+  }
 });
 
-
-
-// ================================
-// API – LISTAR FACTURAS
-// ================================
+/* ================================
+   API – LISTAR FACTURAS
+================================ */
 app.get("/api/facturas", (req, res) => {
   const FACTURAS_DIR = path.join(__dirname, "facturas");
 
@@ -107,23 +117,9 @@ app.get("/api/facturas", (req, res) => {
   res.json(facturas);
 });
 
-
-
-// ================================
-// SERVER
-// ================================
+/* ================================
+   SERVER
+================================ */
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor iniciado en http://localhost:${PORT}`);
-
-  if (fs.existsSync(TOKEN_PATH)) {
-    console.log("🔑 Token existente, leyendo facturas...");
-    leerFacturas()
-      .then(() => console.log("✔ Proceso finalizado"))
-      .catch(err => console.error("❌ Error:", err.message));
-  } else {
-    console.log("👉 Abre el navegador para autorizar Gmail");
-  }
+  console.log(`🚀 Servidor iniciado en puerto ${PORT}`);
 });
-
-const cors = require("cors");
-app.use(cors());
